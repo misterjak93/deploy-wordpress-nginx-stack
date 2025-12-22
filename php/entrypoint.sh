@@ -1,12 +1,8 @@
 #!/bin/sh
 set -e
 
-# --- 1. Assicuriamo i permessi corretti ---
-# Anche su volumi nuovi, Docker potrebbe montare la cartella come root.
-# Forziamo la proprietà a www-data prima di partire.
+# --- 1. Fix Permessi ---
 chown -R www-data:www-data /var/www/html
-
-# Se esiste la cache nginx montata, diamo i permessi anche a quella
 if [ -d "/var/cache/nginx" ]; then
     chown -R www-data:www-data /var/cache/nginx
 fi
@@ -33,46 +29,49 @@ opcache.validate_timestamps = 1
 opcache.revalidate_freq = 2
 EOF
 
-# --- 3. Installazione WordPress (Solo se manca) ---
+# --- 3. Installazione WordPress (Se manca) ---
 if [ ! -f "/var/www/html/wp-config.php" ]; then
     echo "⚡ New installation detected. Installing WordPress..."
     
-    # Pulizia preventiva
     rm -rf /var/www/html/*
-    
-    # Download e Estrazione
     curl -o wordpress.tar.gz -fL "https://wordpress.org/latest.tar.gz"
     tar -xzf wordpress.tar.gz -C /var/www/html --strip-components=1
     rm wordpress.tar.gz
     
     cp wp-config-sample.php wp-config.php
     
-    # Configurazione Database
-    sed -i "s/database_name_here/$DB_NAME/" wp-config.php
-    sed -i "s/username_here/$DB_USER/" wp-config.php
-    sed -i "s/password_here/$DB_PASS/" wp-config.php
-    sed -i "s/localhost/$DB_HOST/" wp-config.php
+    # --- FIX PASSWORD FORTE ---
+    # Usiamo il separatore | invece di / per permettere caratteri speciali nella password
+    sed -i "s|database_name_here|$DB_NAME|" wp-config.php
+    sed -i "s|username_here|$DB_USER|" wp-config.php
+    sed -i "s|password_here|$DB_PASS|" wp-config.php
+    sed -i "s|localhost|$DB_HOST|" wp-config.php
 
-    # Configurazione Extra (Redis + SSL + Cron Off)
-    cat <<EOF >> wp-config.php
+    # --- FIX MIXED CONTENT & CONFIG EXTRA ---
+    # Inseriamo il blocco DOPO la definizione del DB per sicurezza
+    sed -i "/define( 'DB_COLLATE', '' );/a \\
+    \\
+    /* --- DOCKER STACK CONFIG --- */\\
+    define('FS_METHOD', 'direct');\\
+    define('WP_REDIS_HOST', '${REDIS_HOST}');\\
+    define('WP_REDIS_PORT', ${REDIS_PORT});\\
+    define('WP_CACHE', true);\\
+    define('DISABLE_WP_CRON', true);\\
+    \\
+    /* --- FIX SSL & URL --- */\\
+    /* Forza HTTPS per Site URL e Home */\\
+    define('WP_HOME', 'https://${DOMAIN}');\\
+    define('WP_SITEURL', 'https://${DOMAIN}');\\
+    \\
+    /* Riconosci SSL dietro Proxy (Traefik) */\\
+    if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {\\
+        \$_SERVER['HTTPS'] = 'on';\\
+    }" wp-config.php
 
-/* --- STACK CONFIG --- */
-define('FS_METHOD', 'direct');
-define('WP_REDIS_HOST', '${REDIS_HOST}');
-define('WP_REDIS_PORT', ${REDIS_PORT});
-define('WP_CACHE', true);
-define('DISABLE_WP_CRON', true);
-
-/* SSL Fix Traefik */
-if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-    \$_SERVER['HTTPS'] = 'on';
-}
-EOF
-    # Fissiamo i permessi sui file appena scaricati
+    # Fissiamo i permessi
     chown -R www-data:www-data /var/www/html
     echo "✅ WordPress Installed Successfully."
 fi
 
 echo "🚀 Starting PHP-FPM..."
-# Esegue il comando CMD (php-fpm)
 exec "$@"
