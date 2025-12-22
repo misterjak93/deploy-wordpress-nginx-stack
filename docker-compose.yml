@@ -1,8 +1,7 @@
 version: '3.8'
 
 services:
-  # --- 1. Nginx (Web Server) ---
-  # Questo è il servizio che collegherai al dominio principale su Dokploy
+  # --- Nginx (Web Server) ---
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -14,17 +13,18 @@ services:
     depends_on:
       - php
 
-  # --- 2. PHP-FPM (Motore) ---
-  # Non esposto esternamente, parla solo con Nginx
+  # --- PHP-FPM (Motore Custom) ---
   php:
     build:
       context: .
       dockerfile: php.Dockerfile
       args:
         PHP_VERSION: ${PHP_VERSION:-8.3}
+        PHP_EXTRA_EXTENSIONS: ${PHP_EXTRA_EXTENSIONS:-}
     restart: unless-stopped
     user: "www-data"
     environment:
+      # WP Config
       - DOMAIN=${DOMAIN}
       - DB_HOST=mariadb
       - DB_NAME=${DB_NAME}
@@ -32,18 +32,20 @@ services:
       - DB_PASS=${DB_PASS}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # Salt Keys (Opzionali ma consigliate)
-      - WP_AUTH_KEY=${WP_AUTH_KEY}
-      - WP_SECURE_AUTH_KEY=${WP_SECURE_AUTH_KEY}
-      - WP_LOGGED_IN_KEY=${WP_LOGGED_IN_KEY}
-      - WP_NONCE_KEY=${WP_NONCE_KEY}
+      # Limiti Dinamici
+      - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-512M}
+      - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-128M}
+      - PHP_POST_LIMIT=${PHP_POST_LIMIT:-128M}
+      - PHP_MAX_TIME=${PHP_MAX_TIME:-300}
+      - PHP_MAX_INPUT_VARS=${PHP_MAX_INPUT_VARS:-5000}
+      - OPCACHE_ENABLE=${OPCACHE_ENABLE:-1}
+      - OPCACHE_MEMORY=${OPCACHE_MEMORY:-128}
     volumes:
       - wordpress_data:/var/www/html
-      - ./php/custom.ini:/usr/local/etc/php/conf.d/custom.ini
     networks:
       - wordpress-network
 
-  # --- 3. Database ---
+  # --- Database ---
   mariadb:
     image: mariadb:latest
     restart: unless-stopped
@@ -58,7 +60,7 @@ services:
     networks:
       - wordpress-network
 
-  # --- 4. Redis ---
+  # --- Redis ---
   redis:
     image: redis:alpine
     restart: unless-stopped
@@ -68,7 +70,30 @@ services:
     networks:
       - wordpress-network
 
-  # --- 5. File Manager ---
+  # --- Tools: Mailpit (Email Catcher) ---
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    networks:
+      - wordpress-network
+
+  # --- Tools: Cron (Sostituisce WP-Cron) ---
+  cron:
+    image: alpine:latest
+    restart: unless-stopped
+    command: >
+      sh -c "apk add --no-cache curl && 
+      echo '⏰ Cron started...' &&
+      while true; do 
+        curl -s -o /dev/null http://nginx/wp-cron.php?doing_wp_cron >/dev/null 2>&1
+        sleep 60
+      done"
+    networks:
+      - wordpress-network
+    depends_on:
+      - nginx
+
+  # --- Tools: FileBrowser ---
   files:
     image: filebrowser/filebrowser:latest
     restart: unless-stopped
@@ -85,7 +110,7 @@ services:
     networks:
       - wordpress-network
 
-  # --- 6. Adminer ---
+  # --- Tools: Adminer ---
   adminer:
     image: adminer:latest
     restart: unless-stopped
