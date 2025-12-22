@@ -3,12 +3,11 @@ FROM php:${PHP_VERSION}-fpm-alpine
 
 ARG PHP_EXTRA_EXTENSIONS=""
 
-# --- 1. Dipendenze Base + Less (per WP-CLI) ---
-# Rimosso: msmtp
+# --- 1. Dipendenze Base + Less + Shadow ---
 RUN apk add --no-cache \
     freetype-dev libjpeg-turbo-dev libpng-dev libzip-dev \
     imagemagick-dev imagemagick icu-dev linux-headers oniguruma-dev \
-    libxml2-dev less \
+    libxml2-dev less shadow \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) gd zip mysqli pdo pdo_mysql opcache intl mbstring exif
 
@@ -27,14 +26,18 @@ RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
     && chmod +x wp-cli.phar \
     && mv wp-cli.phar /usr/local/bin/wp
 
+# --- 4. Allineamento User ID (Best Practice) ---
+# Assicura che l'utente www-data abbia ID 82 (standard Alpine)
+RUN usermod -u 82 www-data && groupmod -g 82 www-data
+
 WORKDIR /var/www/html
 
-# --- 4. Setup Entrypoint ---
+# --- 5. Configurazione Entrypoint ---
 COPY ./php/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-RUN mkdir -p /usr/local/etc/php/conf.d && \
-    chown -R www-data:www-data /usr/local/etc/php/conf.d
+RUN mkdir -p /usr/local/etc/php/conf.d
 
-USER www-data
+# NOTA: Rimaniamo root qui. L'entrypoint girerà come root per fare il setup,
+# poi lancerà php-fpm che gestirà internamente il cambio utente a www-data.
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["php-fpm"]
