@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # --- 1. Nginx (Web Server) ---
+  # Questo è il servizio che collegherai al dominio principale su Dokploy
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - wordpress-network
+    depends_on:
+      - php
+
+  # --- 2. PHP-FPM (Motore) ---
+  # Non esposto esternamente, parla solo con Nginx
+  php:
+    build:
+      context: .
+      dockerfile: php.Dockerfile
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+    restart: unless-stopped
+    user: "www-data"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - DB_HOST=mariadb
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Salt Keys (Opzionali ma consigliate)
+      - WP_AUTH_KEY=${WP_AUTH_KEY}
+      - WP_SECURE_AUTH_KEY=${WP_SECURE_AUTH_KEY}
+      - WP_LOGGED_IN_KEY=${WP_LOGGED_IN_KEY}
+      - WP_NONCE_KEY=${WP_NONCE_KEY}
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./php/custom.ini:/usr/local/etc/php/conf.d/custom.ini
+    networks:
+      - wordpress-network
+
+  # --- 3. Database ---
+  mariadb:
+    image: mariadb:latest
+    restart: unless-stopped
+    command: --max_allowed_packet=128M --wait_timeout=600 --interactive_timeout=600
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASS}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - wordpress-network
+
+  # --- 4. Redis ---
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - wordpress-network
+
+  # --- 5. File Manager ---
+  files:
+    image: filebrowser/filebrowser:latest
+    restart: unless-stopped
+    user: "0:0"
+    volumes:
+      - wordpress_data:/srv/html
+      - filebrowser_db:/database
+      - filebrowser_config:/config
+    environment:
+      - FB_DATABASE=/database/filebrowser.db
+      - FB_ROOT=/srv/html
+      - FB_LOG=stdout
+      - FB_PORT=8080
+    networks:
+      - wordpress-network
+
+  # --- 6. Adminer ---
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    environment:
+      - ADMINER_DEFAULT_SERVER=mariadb
+      - ADMINER_DESIGN=pepa-linha
+    networks:
+      - wordpress-network
+
+volumes:
+  wordpress_data:
+  mariadb_data:
+  redis_data:
+  filebrowser_db:
+  filebrowser_config:
+
+networks:
+  wordpress-network:
+    driver: bridge
