@@ -29,48 +29,57 @@ opcache.validate_timestamps = 1
 opcache.revalidate_freq = 2
 EOF
 
-# --- 3. Installazione WordPress (Se manca) ---
+# --- 3. Installazione WordPress ---
 if [ ! -f "/var/www/html/wp-config.php" ]; then
-    echo "⚡ New installation detected. Installing WordPress..."
+    echo "⚡ New installation detected..."
     
     rm -rf /var/www/html/*
     curl -o wordpress.tar.gz -fL "https://wordpress.org/latest.tar.gz"
     tar -xzf wordpress.tar.gz -C /var/www/html --strip-components=1
     rm wordpress.tar.gz
     
-    cp wp-config-sample.php wp-config.php
+    # Invece di modificare wp-config-sample, creiamo un wp-config.php 
+    # che legge le password DIRETTAMENTE dall'ambiente del sistema.
+    # Questo è il modo più sicuro in Docker.
     
-    # --- FIX PASSWORD FORTE ---
-    # Usiamo il separatore | invece di / per permettere caratteri speciali nella password
-    sed -i "s|database_name_here|$DB_NAME|" wp-config.php
-    sed -i "s|username_here|$DB_USER|" wp-config.php
-    sed -i "s|password_here|$DB_PASS|" wp-config.php
-    sed -i "s|localhost|$DB_HOST|" wp-config.php
+    cat <<'EOF' > wp-config.php
+<?php
+define( 'DB_NAME',     getenv('DB_NAME') );
+define( 'DB_USER',     getenv('DB_USER') );
+define( 'DB_PASSWORD', getenv('DB_PASS') );
+define( 'DB_HOST',     getenv('DB_HOST') );
+define( 'DB_CHARSET',  'utf8' );
+define( 'DB_COLLATE',  '' );
 
-    # --- FIX MIXED CONTENT & CONFIG EXTRA ---
-    # Inseriamo il blocco DOPO la definizione del DB per sicurezza
-    sed -i "/define( 'DB_COLLATE', '' );/a \\
-    \\
-    /* --- DOCKER STACK CONFIG --- */\\
-    define('FS_METHOD', 'direct');\\
-    define('WP_REDIS_HOST', '${REDIS_HOST}');\\
-    define('WP_REDIS_PORT', ${REDIS_PORT});\\
-    define('WP_CACHE', true);\\
-    define('DISABLE_WP_CRON', true);\\
-    \\
-    /* --- FIX SSL & URL --- */\\
-    /* Forza HTTPS per Site URL e Home */\\
-    define('WP_HOME', 'https://${DOMAIN}');\\
-    define('WP_SITEURL', 'https://${DOMAIN}');\\
-    \\
-    /* Riconosci SSL dietro Proxy (Traefik) */\\
-    if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {\\
-        \$_SERVER['HTTPS'] = 'on';\\
-    }" wp-config.php
+/* --- DOCKER STACK CONFIG --- */
+define('FS_METHOD', 'direct');
+define('WP_REDIS_HOST', getenv('REDIS_HOST'));
+define('WP_REDIS_PORT', 6379);
+define('WP_CACHE', true);
+define('DISABLE_WP_CRON', true);
 
-    # Fissiamo i permessi
-    chown -R www-data:www-data /var/www/html
-    echo "✅ WordPress Installed Successfully."
+/* --- FIX SSL & URL --- */
+define('WP_HOME', 'https://' . getenv('DOMAIN'));
+define('WP_SITEURL', 'https://' . getenv('DOMAIN'));
+
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+    $_SERVER['HTTPS'] = 'on';
+}
+
+$table_prefix = 'wp_';
+define( 'WP_DEBUG', false );
+
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ . '/' );
+}
+require_once ABSPATH . 'wp-settings.php';
+EOF
+
+    # Aggiungi le chiavi di salatura (Salt Keys) via WP-CLI per sicurezza
+    wp config shuffle-salts --allow-root
+
+    chown www-data:www-data wp-config.php
+    echo "✅ WordPress config generated securely."
 fi
 
 echo "🚀 Starting PHP-FPM..."
