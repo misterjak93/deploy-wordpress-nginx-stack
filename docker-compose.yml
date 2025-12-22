@@ -1,19 +1,18 @@
 version: '3.8'
 
 services:
-  # --- Nginx (Web Server) ---
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     volumes:
       - wordpress_data:/var/www/html
       - ./nginx/conf.d:/etc/nginx/conf.d
+      - fastcgi_cache:/var/cache/nginx
     networks:
       - wordpress-network
     depends_on:
       - php
 
-  # --- PHP-FPM (Motore Custom) ---
   php:
     build:
       context: .
@@ -22,8 +21,8 @@ services:
         PHP_VERSION: ${PHP_VERSION:-8.3}
         PHP_EXTRA_EXTENSIONS: ${PHP_EXTRA_EXTENSIONS:-}
     restart: unless-stopped
+    # NOTA: Nessun "user: www-data" qui!
     environment:
-      # WP Config
       - DOMAIN=${DOMAIN}
       - DB_HOST=mariadb
       - DB_NAME=${DB_NAME}
@@ -31,7 +30,7 @@ services:
       - DB_PASS=${DB_PASS}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # Limiti Dinamici
+      - RT_WP_NGINX_HELPER_CACHE_PATH=/var/cache/nginx
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-512M}
       - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-128M}
       - PHP_POST_LIMIT=${PHP_POST_LIMIT:-128M}
@@ -41,10 +40,10 @@ services:
       - OPCACHE_MEMORY=${OPCACHE_MEMORY:-128}
     volumes:
       - wordpress_data:/var/www/html
+      - fastcgi_cache:/var/cache/nginx
     networks:
       - wordpress-network
 
-  # --- Database ---
   mariadb:
     image: mariadb:latest
     restart: unless-stopped
@@ -59,7 +58,6 @@ services:
     networks:
       - wordpress-network
 
-  # --- Redis ---
   redis:
     image: redis:alpine
     restart: unless-stopped
@@ -69,30 +67,6 @@ services:
     networks:
       - wordpress-network
 
-  # --- Tools: Mailpit (Email Catcher) ---
-  mailpit:
-    image: axllent/mailpit
-    restart: unless-stopped
-    networks:
-      - wordpress-network
-
-  # --- Tools: Cron (Sostituisce WP-Cron) ---
-  cron:
-    image: alpine:latest
-    restart: unless-stopped
-    command: >
-      sh -c "apk add --no-cache curl && 
-      echo '⏰ Cron started...' &&
-      while true; do 
-        curl -s -o /dev/null http://nginx/wp-cron.php?doing_wp_cron >/dev/null 2>&1
-        sleep 60
-      done"
-    networks:
-      - wordpress-network
-    depends_on:
-      - nginx
-
-  # --- Tools: FileBrowser ---
   files:
     image: filebrowser/filebrowser:latest
     restart: unless-stopped
@@ -109,7 +83,6 @@ services:
     networks:
       - wordpress-network
 
-  # --- Tools: Adminer ---
   adminer:
     image: adminer:latest
     restart: unless-stopped
@@ -125,6 +98,7 @@ volumes:
   redis_data:
   filebrowser_db:
   filebrowser_config:
+  fastcgi_cache:
 
 networks:
   wordpress-network:
