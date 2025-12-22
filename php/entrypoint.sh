@@ -3,7 +3,7 @@ set -e
 
 echo "⚙️  Configuring PHP Limits..."
 
-# 1. Genera custom.ini dai valori .env
+# 1. Genera custom.ini
 cat <<EOF > /usr/local/etc/php/conf.d/custom.ini
 [PHP]
 memory_limit = ${PHP_MEMORY_LIMIT}
@@ -13,8 +13,6 @@ max_execution_time = ${PHP_MAX_TIME}
 max_input_time = ${PHP_MAX_TIME}
 max_input_vars = ${PHP_MAX_INPUT_VARS}
 expose_php = Off
-; Mailpit setup
-sendmail_path = "/usr/bin/msmtp -t"
 
 [opcache]
 opcache.enable = ${OPCACHE_ENABLE}
@@ -29,7 +27,6 @@ EOF
 if [ ! -f "/var/www/html/wp-config.php" ]; then
     echo "⚡ WordPress not found. Installing..."
     
-    # Pulisci e scarica
     rm -rf /var/www/html/*
     curl -o wordpress.tar.gz -fL "https://wordpress.org/latest.tar.gz"
     tar -xzf wordpress.tar.gz -C /var/www/html --strip-components=1
@@ -37,7 +34,6 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
     
     cp wp-config-sample.php wp-config.php
     
-    # Config DB
     sed -i "s/database_name_here/$DB_NAME/" wp-config.php
     sed -i "s/username_here/$DB_USER/" wp-config.php
     sed -i "s/password_here/$DB_PASS/" wp-config.php
@@ -51,6 +47,8 @@ define('FS_METHOD', 'direct');
 define('WP_REDIS_HOST', '${REDIS_HOST}');
 define('WP_REDIS_PORT', ${REDIS_PORT});
 define('WP_CACHE', true);
+
+/* Disabilita WP-Cron (Gestito da Dokploy/System) */
 define('DISABLE_WP_CRON', true);
 
 /* SSL Fix Traefik */
