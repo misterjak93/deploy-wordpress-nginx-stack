@@ -2,9 +2,12 @@
 set -e
 
 # --- 1. Fix Permessi ---
+# Permessi standard per la webroot
 chown -R www-data:www-data /var/www/html
+
+# MODIFICA CACHE: Impostiamo 777 per permettere la scrittura condivisa tra Nginx e PHP
 if [ -d "/var/cache/nginx" ]; then
-    chown -R www-data:www-data /var/cache/nginx
+    chmod -R 777 /var/cache/nginx
 fi
 
 echo "⚙️  Configuring PHP Limits..."
@@ -38,10 +41,7 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
     tar -xzf wordpress.tar.gz -C /var/www/html --strip-components=1
     rm wordpress.tar.gz
     
-    # Invece di modificare wp-config-sample, creiamo un wp-config.php 
-    # che legge le password DIRETTAMENTE dall'ambiente del sistema.
-    # Questo è il modo più sicuro in Docker.
-    
+    # Generazione wp-config.php che legge le variabili d'ambiente
     cat <<'EOF' > wp-config.php
 <?php
 define( 'DB_NAME',     getenv('DB_NAME') );
@@ -75,7 +75,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once ABSPATH . 'wp-settings.php';
 EOF
 
-    # Aggiungi le chiavi di salatura (Salt Keys) via WP-CLI per sicurezza
+    # Aggiungi le chiavi di salatura (Salt Keys) via WP-CLI
     wp config shuffle-salts --allow-root
 
     chown www-data:www-data wp-config.php
