@@ -1,6 +1,9 @@
+# 1. Definiamo la versione PRIMA del FROM per usarla nel tag dell'immagine
 ARG PHP_VERSION=8.3
+
 FROM php:${PHP_VERSION}-fpm-alpine
 
+# 2. Definiamo gli altri argomenti DOPO il FROM per usarli durante la build
 ARG PHP_EXTRA_EXTENSIONS=""
 
 # --- 1. Dipendenze Base + Less + Shadow ---
