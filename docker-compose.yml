@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: nginx.Dockerfile
     restart: unless-stopped
     volumes:
       - wordpress_data:/var/www/html
@@ -19,9 +21,7 @@ services:
       dockerfile: php.Dockerfile
       args:
         PHP_VERSION: ${PHP_VERSION:-8.3}
-        PHP_EXTRA_EXTENSIONS: ${PHP_EXTRA_EXTENSIONS:-}
     restart: unless-stopped
-    # NOTA: Nessun "user: www-data" qui! L'entrypoint gestisce i permessi.
     environment:
       - DOMAIN=${DOMAIN}
       - DB_HOST=mariadb
@@ -31,13 +31,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - RT_WP_NGINX_HELPER_CACHE_PATH=/var/cache/nginx
-      - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-512M}
-      - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-128M}
-      - PHP_POST_LIMIT=${PHP_POST_LIMIT:-128M}
-      - PHP_MAX_TIME=${PHP_MAX_TIME:-300}
-      - PHP_MAX_INPUT_VARS=${PHP_MAX_INPUT_VARS:-5000}
-      - OPCACHE_ENABLE=${OPCACHE_ENABLE:-1}
-      - OPCACHE_MEMORY=${OPCACHE_MEMORY:-128}
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_UPLOAD_LIMIT=128M
+      - OPCACHE_ENABLE=1
     volumes:
       - wordpress_data:/var/www/html
       - fastcgi_cache:/var/cache/nginx
@@ -49,7 +45,6 @@ services:
     restart: unless-stopped
     command: --max_allowed_packet=128M --wait_timeout=600 --interactive_timeout=600
     environment:
-      # --- CORREZIONE VARIABILI PER MARIADB 12.x ---
       - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASS}
       - MARIADB_DATABASE=${DB_NAME}
       - MARIADB_USER=${DB_USER}
@@ -62,43 +57,19 @@ services:
   redis:
     image: redis:alpine
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     networks:
       - wordpress-network
 
-  files:
-    image: filebrowser/filebrowser:latest
-    restart: unless-stopped
-    user: "0:0"
-    volumes:
-      - wordpress_data:/srv/html
-      - filebrowser_db:/database
-      - filebrowser_config:/config
-    environment:
-      - FB_DATABASE=/database/filebrowser.db
-      - FB_ROOT=/srv/html
-      - FB_LOG=stdout
-      - FB_PORT=8080
-    networks:
-      - wordpress-network
-
-  adminer:
-    image: adminer:latest
-    restart: unless-stopped
-    environment:
-      - ADMINER_DEFAULT_SERVER=mariadb
-      - ADMINER_DESIGN=pepa-linha
-    networks:
-      - wordpress-network
+  # Servizi opzionali (Files, Adminer) rimossi per brevità, 
+  # aggiungili pure se ti servono come nel file precedente.
 
 volumes:
   wordpress_data:
   mariadb_data:
   redis_data:
-  filebrowser_db:
-  filebrowser_config:
   fastcgi_cache:
 
 networks:
