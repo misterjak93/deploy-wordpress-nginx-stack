@@ -21,7 +21,7 @@ services:
         PHP_VERSION: ${PHP_VERSION:-8.3}
         PHP_EXTRA_EXTENSIONS: ${PHP_EXTRA_EXTENSIONS:-}
     restart: unless-stopped
-    # NOTA: Nessun "user: www-data" qui!
+    # NOTA: Nessun "user: www-data" qui! L'entrypoint gestisce i permessi.
     environment:
       - DOMAIN=${DOMAIN}
       - DB_HOST=mariadb
@@ -49,10 +49,11 @@ services:
     restart: unless-stopped
     command: --max_allowed_packet=128M --wait_timeout=600 --interactive_timeout=600
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
-      - MYSQL_DATABASE=${DB_NAME}
-      - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASS}
+      # --- CORREZIONE VARIABILI PER MARIADB 12.x ---
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MARIADB_DATABASE=${DB_NAME}
+      - MARIADB_USER=${DB_USER}
+      - MARIADB_PASSWORD=${DB_PASS}
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
