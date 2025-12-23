@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   nginx:
+    # Usiamo 'build' invece di 'image' per includere il modulo ngx_cache_purge
     build:
       context: .
       dockerfile: nginx.Dockerfile
@@ -21,7 +22,9 @@ services:
       dockerfile: php.Dockerfile
       args:
         PHP_VERSION: ${PHP_VERSION:-8.3}
+        PHP_EXTRA_EXTENSIONS: ${PHP_EXTRA_EXTENSIONS:-}
     restart: unless-stopped
+    # NOTA: L'entrypoint gestisce i permessi e la creazione del php.ini
     environment:
       - DOMAIN=${DOMAIN}
       - DB_HOST=mariadb
@@ -31,11 +34,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - RT_WP_NGINX_HELPER_CACHE_PATH=/var/cache/nginx
+      # --- FIX PER L'ERRORE "Input variables exceeded 0" ---
+      - PHP_MAX_INPUT_VARS=${PHP_MAX_INPUT_VARS:-5000}
+      # -----------------------------------------------------
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-512M}
       - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-128M}
       - PHP_POST_LIMIT=${PHP_POST_LIMIT:-128M}
       - PHP_MAX_TIME=${PHP_MAX_TIME:-300}
       - OPCACHE_ENABLE=${OPCACHE_ENABLE:-1}
+      - OPCACHE_MEMORY=${OPCACHE_MEMORY:-128}
     volumes:
       - wordpress_data:/var/www/html
       - fastcgi_cache:/var/cache/nginx
@@ -59,13 +66,12 @@ services:
   redis:
     image: redis:alpine
     restart: unless-stopped
-    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     networks:
       - wordpress-network
 
-  # --- REINSERITO IL SERVIZIO FILES ---
   files:
     image: filebrowser/filebrowser:latest
     restart: unless-stopped
@@ -82,7 +88,6 @@ services:
     networks:
       - wordpress-network
 
-  # --- REINSERITO IL SERVIZIO ADMINER ---
   adminer:
     image: adminer:latest
     restart: unless-stopped
@@ -96,10 +101,9 @@ volumes:
   wordpress_data:
   mariadb_data:
   redis_data:
-  fastcgi_cache:
-  # Volumi necessari per Filebrowser
   filebrowser_db:
   filebrowser_config:
+  fastcgi_cache:
 
 networks:
   wordpress-network:
