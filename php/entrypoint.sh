@@ -2,17 +2,18 @@
 set -e
 
 # --- 1. Fix Permessi ---
+echo "🔧 Fixing permissions..."
 # Permessi standard per la webroot
 chown -R www-data:www-data /var/www/html
 
-# MODIFICA CACHE: Impostiamo 777 per permettere la scrittura condivisa tra Nginx e PHP
+# Fix Cache Nginx: 777 per scrittura condivisa
 if [ -d "/var/cache/nginx" ]; then
     chmod -R 777 /var/cache/nginx
 fi
 
 echo "⚙️  Configuring PHP Limits..."
 
-# --- 2. Genera custom.ini ---
+# --- 2. Genera custom.ini (Limiti PHP) ---
 cat <<EOF > /usr/local/etc/php/conf.d/custom.ini
 [PHP]
 memory_limit = ${PHP_MEMORY_LIMIT}
@@ -32,24 +33,47 @@ opcache.validate_timestamps = 1
 opcache.revalidate_freq = 2
 EOF
 
-# --- 3. Installazione WordPress ---
+# --- 3. FIX RETE FPM (CRUCIALE PER RISOLVERE ERRORE 502) ---
+# Forza PHP-FPM ad ascoltare sulla porta 9000 accessibile da Nginx
+# e redirige i log su stderr per vederli da "docker logs"
+cat <<EOF > /usr/local/etc/php-fpm.d/zz-docker.conf
+[global]
+daemonize = no
+error_log = /proc/self/fd/2
+
+[www]
+listen = 9000
+listen.owner = www-data
+listen.group = www-data
+access.log = /proc/self/fd/2
+clear_env = no
+catch_workers_output = yes
+decorate_workers_output = no
+EOF
+
+# --- 4. Installazione WordPress ---
 if [ ! -f "/var/www/html/wp-config.php" ]; then
     echo "⚡ New installation detected..."
     
-    rm -rf /var/www/html/*
-    curl -o wordpress.tar.gz -fL "https://wordpress.org/latest.tar.gz"
-    tar -xzf wordpress.tar.gz -C /var/www/html --strip-components=1
-    rm wordpress.tar.gz
+    # Pulisce la cartella (sicurezza se volume sporco)
+    # rm -rf /var/www/html/* # (Commentato per sicurezza: scommenta se vuoi pulire tutto all'avvio)
+
+    # Scarica WP solo se index.php non esiste
+    if [ ! -f "/var/www/html/index.php" ]; then
+        curl -o wordpress.tar.gz -fL "https://wordpress.org/latest.tar.gz"
+        tar -xzf wordpress.tar.gz -C /var/www/html --strip-components=1
+        rm wordpress.tar.gz
+    fi
     
     # Generazione wp-config.php che legge le variabili d'ambiente
     cat <<'EOF' > wp-config.php
 <?php
-define( 'DB_NAME',     getenv('DB_NAME') );
-define( 'DB_USER',     getenv('DB_USER') );
-define( 'DB_PASSWORD', getenv('DB_PASS') );
-define( 'DB_HOST',     getenv('DB_HOST') );
-define( 'DB_CHARSET',  'utf8' );
-define( 'DB_COLLATE',  '' );
+define( 'DB_NAME',      getenv('DB_NAME') );
+define( 'DB_USER',      getenv('DB_USER') );
+define( 'DB_PASSWORD',  getenv('DB_PASS') );
+define( 'DB_HOST',      getenv('DB_HOST') );
+define( 'DB_CHARSET',   'utf8' );
+define( 'DB_COLLATE',   '' );
 
 /* --- DOCKER STACK CONFIG --- */
 define('FS_METHOD', 'direct');
@@ -70,7 +94,7 @@ $table_prefix = 'wp_';
 define( 'WP_DEBUG', false );
 
 if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', __DIR__ . '/' );
+    define( 'ABSPATH', __DIR__ . '/' );
 }
 require_once ABSPATH . 'wp-settings.php';
 EOF
