@@ -27,15 +27,16 @@ RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
     && chmod +x wp-cli.phar \
     && mv wp-cli.phar /usr/local/bin/wp
 
-# --- 4. FIX RETE FPM (SOLUZIONE NUCLEARE) ---
-# Rimuove la configurazione default che ascolta solo su 127.0.0.1
-# E crea un file zz-docker.conf che forza l'ascolto sulla porta 9000 esterna
+# --- 4. FIX RETE FPM (CORRETTO) ---
+# Ora include user e group nel pool [www]
 RUN rm -f /usr/local/etc/php-fpm.d/www.conf \
     && rm -f /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo '[global]' > /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo 'daemonize = no' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo 'error_log = /proc/self/fd/2' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo '[www]' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
+    && echo 'user = www-data' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
+    && echo 'group = www-data' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo 'listen = 9000' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo 'listen.owner = www-data' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
     && echo 'listen.group = www-data' >> /usr/local/etc/php-fpm.d/zz-docker.conf \
